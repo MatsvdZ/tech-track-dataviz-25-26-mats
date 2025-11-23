@@ -1,46 +1,41 @@
 // src/routes/api/statistieken/+server.js
-
 const RDW_VOERTUIGEN = 'https://opendata.rdw.nl/resource/m9d7-ebf2.json';
 const RDW_BRANDSTOF = 'https://opendata.rdw.nl/resource/8ys7-d773.json';
 
-/**
- * We halen eerst een telling op van ALLE personenauto’s
- * en daarna van alle elektrische personenauto’s.
- * De RDW API ondersteunt $select en $where voor dit soort queries.
- */
+let cache = { data: null, timestamp: 0 };
+const CACHE_TTL = 1000 * 60 * 60; // 1 uur
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Fout bij fetch: ${res.status}`);
+  return await res.json();
+}
 
 export async function GET() {
   try {
-    // 🟢 Totaal aantal personenauto’s
-    const totaalRes = await fetch(
-      `${RDW_VOERTUIGEN}?$select=count(kenteken)&$where=voertuigsoort='Personenauto'`
-    );
-    const totaalData = await totaalRes.json();
-    const totaal = parseInt(totaalData[0].count_kenteken);
+    if (cache.data && Date.now() - cache.timestamp < CACHE_TTL) {
+      return new Response(JSON.stringify(cache.data), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
 
-    // ⚡ Aantal elektrische auto's
-    // In de brandstofdataset staan de elektrische voertuigen met brandstof_omschrijving = 'Elektriciteit'
-    const elektrischRes = await fetch(
-      `${RDW_BRANDSTOF}?$select=count(kenteken)&$where=brandstof_omschrijving='Elektriciteit'`
-    );
-    const elektrischData = await elektrischRes.json();
-    const elektrisch = parseInt(elektrischData[0].count_kenteken);
+    // Totaal voertuigen
+    const totaalRes = await fetchJSON(`${RDW_VOERTUIGEN}?$select=count(kenteken)`);
+    const totaal = parseInt(totaalRes[0]?.count_kenteken || 0);
 
-    const percentage = ((elektrisch / totaal) * 100).toFixed(2);
+    // Totaal elektrisch
+    const elektrischRes = await fetchJSON(`${RDW_BRANDSTOF}?$select=count(kenteken)&$where=brandstof_omschrijving='Elektriciteit'`);
+    const elektrisch = parseInt(elektrischRes[0]?.count_kenteken || 0);
 
-    return new Response(
-      JSON.stringify({
-        totaal,
-        elektrisch,
-        percentage,
-      }),
-      {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      }
-    );
-  } catch (error) {
-    console.error('Fout bij ophalen RDW statistieken:', error);
-    return new Response(JSON.stringify({ error: 'Fout bij ophalen RDW data' }), { status: 500 });
+    // Percentage
+    const percentage = totaal > 0 ? ((elektrisch / totaal) * 100).toFixed(2) : '0.00';
+
+    const result = { totaal, elektrisch, percentage };
+    cache = { data: result, timestamp: Date.now() };
+    return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } });
+
+  } catch (err) {
+    console.error('❌ /api/statistieken fout:', err);
+    return new Response(JSON.stringify({ error: 'Kon RDW data niet ophalen' }), { status: 500 });
   }
 }

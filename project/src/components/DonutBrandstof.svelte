@@ -1,175 +1,109 @@
 <script>
-	import * as d3 from 'd3';
 	import { onMount } from 'svelte';
+	import * as d3 from 'd3';
 
-	export let data = [];
+	export let data = []; // [{ brandstof: 'Benzine', count: 123 }, ...]
 
-	let container;
-	let observer;
+	let chartContainer;
 
 	onMount(() => {
-		if (!data || data.length === 0) return;
+		if (!data.length) return;
 
-		// Draw only when visible
-		observer = new IntersectionObserver(
+		// Formatteer percentages
+		const total = d3.sum(data, (d) => d.count);
+		const dataset = data.map((d) => ({ ...d, percentage: (d.count / total) * 100 }));
+
+		const width = 300;
+		const height = 300;
+		const radius = Math.min(width, height) / 2;
+
+		const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+		const svg = d3
+			.select(chartContainer)
+			.append('svg')
+			.attr('width', width)
+			.attr('height', height)
+			.append('g')
+			.attr('transform', `translate(${width / 2}, ${height / 2})`);
+
+		const pie = d3
+			.pie()
+			.value((d) => d.count)
+			.sort(null);
+
+		const arc = d3
+			.arc()
+			.innerRadius(radius * 0.5)
+			.outerRadius(radius * 0.9);
+
+		const arcs = svg.selectAll('arc').data(pie(dataset)).enter().append('g');
+
+		// animatie wanneer in viewport
+		const observer = new IntersectionObserver(
 			(entries) => {
 				if (entries[0].isIntersecting) {
-					drawChart();
-					observer.disconnect();
+					arcs
+						.append('path')
+						.attr('fill', (d) => color(d.data.brandstof))
+						.transition()
+						.duration(1000)
+						.attrTween('d', function (d) {
+							const i = d3.interpolate({ startAngle: 0, endAngle: 0 }, d);
+							return (t) => arc(i(t));
+						});
+
+					// labels
+					arcs
+						.append('text')
+						.attr('transform', (d) => `translate(${arc.centroid(d)})`)
+						.attr('text-anchor', 'middle')
+						.attr('dy', '0.35em')
+						.text((d) => `${d.data.brandstof}: ${d.data.percentage.toFixed(1)}%`)
+						.style('font-size', '10px');
 				}
 			},
 			{ threshold: 0.3 }
 		);
 
-		observer.observe(container);
-	});
+		observer.observe(chartContainer);
 
-	function drawChart() {
-		const width = 350;
-		const height = 350;
-		const radius = Math.min(width, height) / 2;
-
-		const total = d3.sum(data, (d) => d.count_kenteken);
-
-		d3.select(container).selectAll('*').remove();
-
-		// SVG
-		const svg = d3
-			.select(container)
-			.append('svg')
-			.attr('width', width + 200) // space for legend
-			.attr('height', height)
-			.append('g')
-			.attr('transform', `translate(${width / 2}, ${height / 2})`);
-
-		const color = d3.scaleOrdinal(d3.schemeTableau10);
-
-		// Pie generator
-		const pie = d3
-			.pie()
-			.sort(null)
-			.value((d) => d.count_kenteken);
-
-		const data_ready = pie(data);
-
-		// Arc generator
-		const arc = d3.arc().innerRadius(80).outerRadius(radius);
-
-		// Tooltip
-		const tooltip = d3
-			.select(container)
-			.append('div')
-			.style('position', 'absolute')
-			.style('background', 'rgba(0,0,0,0.8)')
-			.style('padding', '8px 12px')
-			.style('color', 'white')
-			.style('font-size', '14px')
-			.style('border-radius', '6px')
-			.style('pointer-events', 'none')
-			.style('opacity', 0);
-
-		// Draw arcs with transition
-		svg
-			.selectAll('path')
-			.data(data_ready)
-			.enter()
-			.append('path')
-			.attr('fill', (d) => color(d.data.brandstof_omschrijving))
-			.attr('stroke', 'white')
-			.style('stroke-width', '2px')
-			.transition()
-			.duration(900)
-			.attrTween('d', function (d) {
-				const i = d3.interpolate(d.startAngle, d.endAngle);
-				return function (t) {
-					d.endAngle = i(t);
-					return arc(d);
-				};
-			});
-
-		// Tooltip interactions
-		svg
-			.selectAll('path')
-			.on('mousemove', function (e, d) {
-				tooltip
-					.style('opacity', 1)
-					.html(
-						`
-            <strong>${d.data.brandstof_omschrijving}</strong><br>
-            ${d.data.count_kenteken.toLocaleString()} voertuigen<br>
-            ${((d.data.count_kenteken / total) * 100).toFixed(1)}%
-          `
-					)
-					.style('left', e.pageX + 12 + 'px')
-					.style('top', e.pageY - 28 + 'px');
-			})
-			.on('mouseout', () => tooltip.style('opacity', 0));
-
-		// Legend
+		// legenda
 		const legend = d3
-			.select(container)
-			.select('svg')
-			.append('g')
-			.attr('transform', `translate(${width + 20}, 20)`);
+			.select(chartContainer)
+			.append('div')
+			.style('display', 'flex')
+			.style('flex-direction', 'column')
+			.style('margin-top', '10px');
 
-		const legendItem = legend
-			.selectAll('.legend-item')
-			.data(data_ready)
-			.enter()
-			.append('g')
-			.attr('class', 'legend-item')
-			.attr('transform', (_, i) => `translate(0, ${i * 24})`)
-			.style('cursor', 'pointer');
+		dataset.forEach((d) => {
+			const item = legend
+				.append('div')
+				.style('display', 'flex')
+				.style('align-items', 'center')
+				.style('opacity', 0);
 
-		// Legend color box
-		legendItem
-			.append('rect')
-			.attr('width', 14)
-			.attr('height', 14)
-			.attr('fill', (d) => color(d.data.brandstof_omschrijving));
+			item
+				.append('div')
+				.style('width', '15px')
+				.style('height', '15px')
+				.style('margin-right', '5px')
+				.style('background-color', color(d.brandstof));
 
-		// Legend text
-		legendItem
-			.append('text')
-			.attr('x', 24)
-			.attr('y', 12)
-			.style('font-size', '14px')
-			.style('fill', '#d8d6e3') // <---- change legend text color here
-			.text(
-				(d) =>
-					`${d.data.brandstof_omschrijving} (${((d.data.count_kenteken / total) * 100).toFixed(
-						1
-					)}%)`
-			);
+			item.append('div').text(`${d.brandstof}: ${d.percentage.toFixed(1)}%`);
 
-		// Legend click to toggle slice visibility
-		legendItem.on('click', function (_, d) {
-			const opacity = svg
-				.selectAll('path')
-				.filter((p) => p.data.brandstof_omschrijving === d.data.brandstof_omschrijving)
-				.style('opacity');
-
-			const newOpacity = opacity == 1 ? 0.2 : 1;
-
-			svg
-				.selectAll('path')
-				.filter((p) => p.data.brandstof_omschrijving === d.data.brandstof_omschrijving)
-				.transition()
-				.duration(300)
-				.style('opacity', newOpacity);
+			// animatie legenda
+			item.transition().delay(500).duration(1000).style('opacity', 1);
 		});
-	}
+	});
 </script>
 
-<div bind:this={container} class="donut-container"></div>
+<div bind:this={chartContainer}></div>
 
 <style>
-	.donut-container {
-		position: relative;
-		width: fit-content;
-	}
-
-	.donut-container div {
-		pointer-events: none;
+	div {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
 	}
 </style>
