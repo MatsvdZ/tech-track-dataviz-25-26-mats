@@ -3,14 +3,12 @@
 	import DonutBrandstof from '../components/DonutBrandstof.svelte';
 	import LineVerkoopPerJaar from '../components/LineVerkoopPerJaar.svelte';
 
-
 	export let data;
 
+	// Haal alle datasets uit de server-side load return
 	const statistieken = data.statistieken;
-	const perJaar = data.perJaar;
 	const brandstofVerdeling = data.brandstofVerdeling;
 	const verkoopPerJaar = data.verkoopPerJaar;
-	const evTopMerken = data.evTopMerken ?? [];
 </script>
 
 <main>

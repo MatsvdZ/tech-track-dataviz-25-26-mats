@@ -1,9 +1,10 @@
 <script>
-	import favicon from '$lib/assets/favicon.svg';
+import favicon from '$lib/assets/favicon.svg';
 
-	let { children } = $props();
+let { children } = $props();
 
-	import "../lib/styles/globaal.css";
+// Globale styles en favicon voor alle pagina's
+import "../lib/styles/globaal.css";
 </script>
 
 <svelte:head>

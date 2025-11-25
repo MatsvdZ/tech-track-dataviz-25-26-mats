@@ -6,6 +6,7 @@ let cache = { data: null, timestamp: 0 };
 const CACHE_TTL = 1000 * 60 * 60; // 1 uur
 
 async function fetchJSON(url) {
+  // Standaard fetch helper met foutafhandeling
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Fout bij fetch: ${res.status}`);
   return await res.json();
@@ -13,6 +14,7 @@ async function fetchJSON(url) {
 
 export async function GET() {
   try {
+    // Bij cache hit meteen teruggeven
     if (cache.data && Date.now() - cache.timestamp < CACHE_TTL) {
       return new Response(JSON.stringify(cache.data), {
         headers: { 'Content-Type': 'application/json' }

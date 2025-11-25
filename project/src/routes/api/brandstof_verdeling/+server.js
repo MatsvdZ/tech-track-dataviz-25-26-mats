@@ -5,6 +5,7 @@ let cache = { data: null, timestamp: 0 };
 const CACHE_TTL = 1000 * 60 * 60;
 
 async function fetchJSON(url) {
+  // Kleine helper voor fetch + JSON met foutafhandeling
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Fout bij fetch: ${res.status}`);
   return await res.json();
@@ -12,6 +13,7 @@ async function fetchJSON(url) {
 
 export async function GET() {
   try {
+    // Cache hit? Dan direct serve en skip RDW
     if (cache.data && Date.now() - cache.timestamp < CACHE_TTL) {
       return new Response(JSON.stringify(cache.data), { headers: { 'Content-Type': 'application/json' } });
     }
@@ -19,7 +21,7 @@ export async function GET() {
     // RDW aggregeert per brandstof
     const data = await fetchJSON(`${RDW_BRANDSTOF}?$select=brandstof_omschrijving,count(kenteken)&$group=brandstof_omschrijving`);
 
-    // Kleine categorieën samenvoegen
+    // Kleine categorieën samenvoegen naar Overig
     const small = ['Alcohol', 'CNG', 'LNG', 'Waterstof', undefined];
     let overigCount = 0;
     const filtered = [];
@@ -34,6 +36,7 @@ export async function GET() {
 
     if (overigCount > 0) filtered.push({ brandstof: 'Overig', count: overigCount });
 
+    // Bewaar in cache en stuur naar client
     cache = { data: filtered, timestamp: Date.now() };
     return new Response(JSON.stringify(filtered), { headers: { 'Content-Type': 'application/json' } });
 

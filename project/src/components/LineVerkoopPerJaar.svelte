@@ -8,16 +8,17 @@
 	let resizeObserver;
 
 	function drawChart() {
+		// Sla tekenen over als er geen data of container is
 		if (!data || data.length === 0) return;
 		if (!chartContainer) return;
 
 		const containerWidth = chartContainer.clientWidth;
 		const containerHeight = chartContainer.clientHeight || 400;
 
-		// Clear old SVG
+		// Maak de container eerst leeg
 		d3.select(chartContainer).selectAll('*').remove();
 
-		const margin = { top: 20, right: 60, bottom: 20, left: 60 };
+		const margin = { top: 20, right: 100, bottom: 20, left: 60 };
 		const width = containerWidth - margin.left - margin.right;
 		const height = containerHeight - margin.top - margin.bottom;
 
@@ -63,17 +64,17 @@
 			.style('font-family', 'inherit')
 			.style('font-weight', '500');
 
-		// Colors
-		const color = d3.scaleOrdinal().domain(subgroups).range(['#1f77b4', '#ff7f0e']);
+		// Kleuren (Benzine = wit, Elektrisch = paars)
+		const color = d3.scaleOrdinal().domain(subgroups).range(['#ffffff', 'rgba(206, 136, 255, 1)']);
 
-		// Line generator
+		// Lijn generator
 		const line = d3
 			.line()
 			.x((d) => x(d.jaar) + x.bandwidth() / 2)
 			.y((d) => y(d.value))
 			.curve(d3.curveMonotoneX);
 
-		// Draw lines + points
+		// teken lijnen en punten voor elke brandstofgroep
 		subgroups.forEach((key) => {
 			svg
 				.append('path')
@@ -83,6 +84,7 @@
 				.attr('stroke-width', 2)
 				.attr('d', line);
 
+			// Punten op de lijn
 			svg
 				.selectAll(`.dot-${key}`)
 				.data(data.map((d) => ({ jaar: d.jaar, value: d[key] })))
@@ -92,12 +94,27 @@
 				.attr('r', 4)
 				.attr('fill', color(key));
 		});
+
+		// Legenda rechtsboven in de chart
+		const legend = svg.append('g').attr('transform', `translate(${width - 140}, 10)`);
+		subgroups.forEach((key, i) => {
+			const row = legend.append('g').attr('transform', `translate(0, ${i * 22})`);
+			row.append('circle').attr('r', 6).attr('fill', color(key));
+			row
+				.append('text')
+				.attr('x', 14)
+				.attr('y', 4)
+				.text(key)
+				.style('fill', '#fff')
+				.style('font-size', '13px')
+				.style('font-family', 'Inter, sans-serif');
+		});
 	}
 
 	onMount(() => {
 		drawChart();
 
-		// Automatically redraw on resize
+		// Teken opnieuw bij resizen
 		resizeObserver = new ResizeObserver(() => {
 			drawChart();
 		});

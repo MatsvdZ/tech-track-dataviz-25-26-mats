@@ -15,6 +15,7 @@ async function fetchJSON(url) {
 
 // Helper voor RDW pagination
 async function fetchAllPaged(baseUrl, limit = 50000) {
+  // Loopt batches langs tot er geen records meer terugkomen (RDW geeft max 50k per call)
   let results = [];
   let offset = 0;
 
@@ -25,6 +26,7 @@ async function fetchAllPaged(baseUrl, limit = 50000) {
     if (batch.length === 0) break;
     results.push(...batch);
 
+    // Volgende pagina; beveiliging tegen runaway loops
     offset += limit;
     if (offset > 2000000) break; // veiligheid
   }
@@ -37,19 +39,19 @@ export async function GET({ url }) {
     const type = url.searchParams.get("type") || "all";  
     const cacheKey = type;
 
-    // Cache check
+    // Cache check per type (auto/all)
     if (cache.data[cacheKey] && Date.now() - cache.timestamp < CACHE_TTL) {
       return new Response(JSON.stringify(cache.data[cacheKey]), {
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    // 1️⃣ RDW voertuigen ophalen (2020+)
+    // RDW voertuigen ophalen (2020+)
     const voertuigen = await fetchAllPaged(
       `${RDW_VOERTUIGEN}?$select=kenteken,voertuigsoort,date_extract_y(datum_eerste_toelating_dt) as jaar&$where=date_extract_y(datum_eerste_toelating_dt)>=${FROM_YEAR}`
     );
 
-    // 2️⃣ Alle elektrische kentekens ophalen
+    // Alle elektrische kentekens ophalen
     const elektrischData = await fetchAllPaged(
       `${RDW_BRANDSTOF}?$select=kenteken&$where=brandstof_omschrijving='Elektriciteit'`
     );
@@ -69,10 +71,12 @@ export async function GET({ url }) {
       if (type === "auto" && !isPersonenauto(v)) return;
       if (type === "all" && !isMotorvoertuig(v)) return;
 
+      // Init teller voor jaar
       if (!telling[jaar]) {
         telling[jaar] = { Benzine: 0, Elektrisch: 0 };
       }
 
+      // Verhoog elektrische telling als kenteken in set zit, anders benzine
       if (elektrischSet.has(v.kenteken)) {
         telling[jaar].Elektrisch++;
       } else {
@@ -80,6 +84,7 @@ export async function GET({ url }) {
       }
     });
 
+    // Maak gesorteerde array voor grafiek
     const result = Object.keys(telling)
       .map(y => ({
         jaar: Number(y),
