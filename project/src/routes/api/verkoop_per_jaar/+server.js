@@ -1,38 +1,78 @@
-// src/routes/api/verkoop_per_jaar/+server.js
-const RDW_VOERTUIGEN = 'https://opendata.rdw.nl/resource/m9d7-ebf2.json';
-const RDW_BRANDSTOF = 'https://opendata.rdw.nl/resource/8ys7-d773.json';
+const RDW_VOERTUIGEN = "https://opendata.rdw.nl/resource/m9d7-ebf2.json";
+const RDW_BRANDSTOF = "https://opendata.rdw.nl/resource/8ys7-d773.json";
 
-let cache = { data: null, timestamp: 0 };
-const CACHE_TTL = 1000 * 60 * 60;
+let cache = { data: {}, timestamp: 0 };
+const CACHE_TTL = 1000 * 60 * 60; // 1 uur
 
+const FROM_YEAR = 2020;
+
+// Helper fetch
 async function fetchJSON(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Fout bij fetch: ${res.status}`);
-  return await res.json();
+  if (!res.ok) throw new Error(`Fout ${res.status}: ${url}`);
+  return res.json();
 }
 
-export async function GET() {
+// Helper voor RDW pagination
+async function fetchAllPaged(baseUrl, limit = 50000) {
+  let results = [];
+  let offset = 0;
+
+  while (true) {
+    const url = `${baseUrl}&$limit=${limit}&$offset=${offset}`;
+    const batch = await fetchJSON(url);
+
+    if (batch.length === 0) break;
+    results.push(...batch);
+
+    offset += limit;
+    if (offset > 2000000) break; // veiligheid
+  }
+
+  return results;
+}
+
+export async function GET({ url }) {
   try {
-    if (cache.data && Date.now() - cache.timestamp < CACHE_TTL) {
-      return new Response(JSON.stringify(cache.data), { headers: { 'Content-Type': 'application/json' } });
+    const type = url.searchParams.get("type") || "all";  
+    const cacheKey = type;
+
+    // Cache check
+    if (cache.data[cacheKey] && Date.now() - cache.timestamp < CACHE_TTL) {
+      return new Response(JSON.stringify(cache.data[cacheKey]), {
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
-    // Voertuigen per jaar vanaf 2020
-    const voertuigen = await fetchJSON(
-      `${RDW_VOERTUIGEN}?$select=kenteken,datum_eerste_toelating&$where=datum_eerste_toelating >= '20200101'`
+    // 1️⃣ RDW voertuigen ophalen (2020+)
+    const voertuigen = await fetchAllPaged(
+      `${RDW_VOERTUIGEN}?$select=kenteken,voertuigsoort,date_extract_y(datum_eerste_toelating_dt) as jaar&$where=date_extract_y(datum_eerste_toelating_dt)>=${FROM_YEAR}`
     );
 
-    // Elektrisch kentekens
-    const elektrischData = await fetchJSON(
+    // 2️⃣ Alle elektrische kentekens ophalen
+    const elektrischData = await fetchAllPaged(
       `${RDW_BRANDSTOF}?$select=kenteken&$where=brandstof_omschrijving='Elektriciteit'`
     );
-    const elektrischSet = new Set(elektrischData.map(d => d.kenteken));
+    const elektrischSet = new Set(elektrischData.map(x => x.kenteken));
 
-    // Tel per jaar
+    // Filters per type
+    const isMotorvoertuig = v => !["Aanhangwagen", "Oplegger"].includes(v.voertuigsoort);
+    const isPersonenauto  = v => v.voertuigsoort === "Personenauto";
+
     const telling = {};
+
     voertuigen.forEach(v => {
-      const jaar = v.datum_eerste_toelating.substring(0, 4);
-      if (!telling[jaar]) telling[jaar] = { Benzine: 0, Elektrisch: 0 };
+      const jaar = Number(v.jaar);
+      if (!jaar || jaar < FROM_YEAR) return;
+
+      // Filteren op type
+      if (type === "auto" && !isPersonenauto(v)) return;
+      if (type === "all" && !isMotorvoertuig(v)) return;
+
+      if (!telling[jaar]) {
+        telling[jaar] = { Benzine: 0, Elektrisch: 0 };
+      }
+
       if (elektrischSet.has(v.kenteken)) {
         telling[jaar].Elektrisch++;
       } else {
@@ -40,15 +80,24 @@ export async function GET() {
       }
     });
 
-    const resultaat = Object.keys(telling)
-      .sort()
-      .map(j => ({ jaar: j, ...telling[j] }));
+    const result = Object.keys(telling)
+      .map(y => ({
+        jaar: Number(y),
+        Benzine: telling[y].Benzine,
+        Elektrisch: telling[y].Elektrisch
+      }))
+      .sort((a, b) => a.jaar - b.jaar);
 
-    cache = { data: resultaat, timestamp: Date.now() };
-    return new Response(JSON.stringify(resultaat), { headers: { 'Content-Type': 'application/json' } });
+    // Opslaan in cache per type
+    cache.data[cacheKey] = result;
+    cache.timestamp = Date.now();
+
+    return new Response(JSON.stringify(result), {
+      headers: { "Content-Type": "application/json" }
+    });
 
   } catch (err) {
-    console.error('❌ /api/verkoop_per_jaar fout:', err);
-    return new Response(JSON.stringify({ error: 'Kon RDW data niet ophalen' }), { status: 500 });
+    console.error("❌ /api/verkoop_per_jaar fout:", err);
+    return new Response(JSON.stringify({ error: "Kon RDW data niet ophalen" }), { status: 500 });
   }
 }

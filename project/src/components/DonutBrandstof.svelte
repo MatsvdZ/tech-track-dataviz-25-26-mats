@@ -6,12 +6,43 @@
 
 	let chartContainer;
 
+	// 👉 Kleine categorieën samenvoegen
+	function mergeSmallCategories(data, threshold) {
+		const total = d3.sum(data, (d) => d.count);
+		const large = [];
+		let otherCount = 0;
+
+		for (const row of data) {
+			const pct = row.count / total;
+			if (pct < threshold) {
+				otherCount += row.count;
+			} else {
+				large.push(row);
+			}
+		}
+
+		if (otherCount > 0) {
+			large.push({
+				brandstof: "Overig",
+				count: otherCount
+			});
+		}
+
+		return large;
+	}
+
 	onMount(() => {
 		if (!data.length) return;
 
-		// Formatteer percentages
-		const total = d3.sum(data, (d) => d.count);
-		const dataset = data.map((d) => ({ ...d, percentage: (d.count / total) * 100 }));
+		// 👉 1) Kleine categorieën samenvoegen
+		const cleanedData = mergeSmallCategories(data, 0.01); // 1%
+
+		// 👉 2) Percentages opnieuw berekenen
+		const total = d3.sum(cleanedData, (d) => d.count);
+		const dataset = cleanedData.map((d) => ({
+			...d,
+			percentage: (d.count / total) * 100
+		}));
 
 		const width = 300;
 		const height = 300;
@@ -39,7 +70,7 @@
 
 		const arcs = svg.selectAll('arc').data(pie(dataset)).enter().append('g');
 
-		// animatie wanneer in viewport
+		// 👉 animatie wanneer element in viewport komt
 		const observer = new IntersectionObserver(
 			(entries) => {
 				if (entries[0].isIntersecting) {
@@ -68,7 +99,7 @@
 
 		observer.observe(chartContainer);
 
-		// legenda
+		// 👉 legenda
 		const legend = d3
 			.select(chartContainer)
 			.append('div')
@@ -92,7 +123,6 @@
 
 			item.append('div').text(`${d.brandstof}: ${d.percentage.toFixed(1)}%`);
 
-			// animatie legenda
 			item.transition().delay(500).duration(1000).style('opacity', 1);
 		});
 	});
